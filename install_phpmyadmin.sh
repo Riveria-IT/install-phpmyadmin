@@ -25,7 +25,7 @@ function remove_if_exists() {
   fi
 }
 
-# 🧹 Vorher alles aufräumen
+# 🧹 Aufräumen
 echo "🧹 Entferne alte Installationen..."
 remove_if_exists phpmyadmin
 remove_if_exists apache2
@@ -33,15 +33,9 @@ remove_if_exists mariadb-server
 remove_if_exists mariadb-client
 remove_if_exists expect
 
-echo "🧼 Entferne alte phpMyAdmin & MySQL-Dateien..."
-rm -rf /usr/share/phpmyadmin
-rm -rf /etc/phpmyadmin
-rm -rf /var/lib/phpmyadmin
-rm -rf /etc/mysql
-rm -rf /var/lib/mysql
+rm -rf /usr/share/phpmyadmin /etc/phpmyadmin /var/lib/phpmyadmin /etc/mysql /var/lib/mysql
 
-# 🔁 Frische Installation
-echo "📦 Installiere Apache, PHP, MariaDB..."
+# 🔁 Installation
 apt update
 apt install -y apache2 php php-mbstring php-zip php-gd php-json php-curl php-mysql mariadb-server expect
 
@@ -50,8 +44,7 @@ systemctl enable mariadb
 systemctl start apache2
 systemctl start mariadb
 
-# 🔐 Root-Passwort & Auth-Methode setzen
-echo "🔐 Setze Root-Passwort und Auth-Methode..."
+# 🔐 Passwort setzen
 expect -c "
 set timeout 5
 spawn mysql_secure_installation
@@ -66,14 +59,12 @@ expect \"Reload privilege tables now?\" { send \"y\r\" }
 expect eof
 "
 
-# Plugin setzen (auth_socket → mysql_native_password)
-echo "⚙️ Korrigiere MySQL-Plugin für Benutzer '$MYSQL_USER'..."
 mysql -u root <<EOF
 ALTER USER '$MYSQL_USER'@'localhost' IDENTIFIED WITH mysql_native_password BY '$MYSQL_PASS';
 FLUSH PRIVILEGES;
 EOF
 
-# 🛠️ phpMyAdmin Installation
+# 🛠️ phpMyAdmin
 echo "⚙️ Installiere phpMyAdmin..."
 echo "phpmyadmin phpmyadmin/dbconfig-install boolean true" | debconf-set-selections
 echo "phpmyadmin phpmyadmin/mysql/admin-user string $MYSQL_USER" | debconf-set-selections
@@ -82,15 +73,12 @@ echo "phpmyadmin phpmyadmin/app-password-confirm password $MYSQL_PASS" | debconf
 echo "phpmyadmin phpmyadmin/reconfigure-webserver multiselect apache2" | debconf-set-selections
 
 DEBIAN_FRONTEND=noninteractive apt install -y phpmyadmin
-
 ln -sf /etc/phpmyadmin/apache.conf /etc/apache2/conf-available/phpmyadmin.conf
 a2enconf phpmyadmin
 systemctl reload apache2
 
-# 🔚 Ausgabe
 IP=$(hostname -I | awk '{print $1}')
 echo ""
-echo "✅ phpMyAdmin erfolgreich installiert!"
-echo "🌐 Zugriff: http://$IP/phpmyadmin"
+echo "✅ phpMyAdmin fertig unter: http://$IP/phpmyadmin"
 echo "🔑 Login: $MYSQL_USER"
 echo "🔑 Passwort: $MYSQL_PASS"
