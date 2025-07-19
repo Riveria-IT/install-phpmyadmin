@@ -1,26 +1,26 @@
 #!/bin/bash
 set -e
 
-echo "\ud83d\ude80 Starte phpMyAdmin Auto-Installation..."
+echo "🚀 Starte phpMyAdmin Auto-Installation..."
 
-# Sicherstellen, dass das Script als Root l\u00e4uft
+# Sicherstellen, dass das Script als Root läuft
 if [ "$EUID" -ne 0 ]; then
-  echo "\u274c Bitte als root oder mit sudo ausf\u00fchren."
+  echo "❌ Bitte als root oder mit sudo ausführen."
   exit 1
 fi
 
 # Vorhandene problematische MariaDB-Installationen erkennen und bereinigen
 if dpkg -l | grep -q mariadb; then
-  echo "\u26a0\ufe0f Es scheint bereits eine MariaDB-Installation zu existieren."
+  echo "⚠️ Es scheint bereits eine MariaDB-Installation zu existieren."
   read -p "Alles bereinigen und neu installieren? (j/n): " -r
   if [[ $REPLY =~ ^[JjYy]$ ]]; then
-    echo "\u274c Entferne alte MariaDB-Installation..."
+    echo "❌ Entferne alte MariaDB-Installation..."
     systemctl stop mariadb || true
     apt purge --remove '^mariadb.*' '^mysql.*' -y || true
     apt autoremove -y
     rm -rf /etc/mysql /var/lib/mysql
   else
-    echo "\u274c Abgebrochen."
+    echo "❌ Abgebrochen."
     exit 1
   fi
 fi
@@ -68,9 +68,12 @@ systemctl reload apache2
 IP=$(hostname -I | awk '{print $1}')
 
 # Hinweis
-echo "\n\u2705 Installation abgeschlossen!"
-echo "\ud83c\udf10 phpMyAdmin ist erreichbar unter: http://$IP/phpmyadmin"
-echo "\u26a0\ufe0f Bitte jetzt manuell einen MySQL-Benutzer mit Passwort anlegen:\n"
+echo
+echo "✅ Installation abgeschlossen!"
+echo "🌐 phpMyAdmin ist erreichbar unter: http://$IP/phpmyadmin"
+echo
+echo "🔐 Bitte jetzt manuell einen MySQL-Benutzer mit Passwort anlegen:"
+echo
 echo "  sudo mariadb -u root"
 echo "  CREATE USER 'deinuser'@'localhost' IDENTIFIED BY 'deinpasswort';"
 echo "  GRANT ALL PRIVILEGES ON *.* TO 'deinuser'@'localhost' WITH GRANT OPTION;"
@@ -78,7 +81,7 @@ echo "  FLUSH PRIVILEGES;"
 echo "  EXIT;"
 
 # Optional: Script entfernen
-read -p "\ud83d\udd27 Script nach Installation l\u00f6schen? (j/n): " -r
+read -p "🛠️ Script nach Installation löschen? (j/n): " -r
 if [[ $REPLY =~ ^[JjYy]$ ]]; then
   rm -- "$0"
 fi
