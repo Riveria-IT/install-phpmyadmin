@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-echo "🚀 Starte phpMyAdmin-Installation..."
+echo "🚀 Starte phpMyAdmin Komplett-Installation (inkl. Bereinigung)..."
 
 if [ "$EUID" -ne 0 ]; then
   echo "❌ Bitte als root oder mit sudo ausführen."
@@ -16,77 +16,81 @@ function check_installed() {
   dpkg -s "$1" &>/dev/null
 }
 
-# Apache
-if check_installed apache2; then
-  echo "✅ Apache ist installiert"
-else
-  apt update
-  apt install -y apache2
-fi
+function remove_if_exists() {
+  if check_installed "$1"; then
+    echo "🧼 Entferne $1 vollständig..."
+    systemctl stop "$1" 2>/dev/null || true
+    apt purge --remove -y "$1"
+    apt autoremove -y
+  fi
+}
 
-# PHP
-if check_installed php; then
-  echo "✅ PHP ist installiert"
-else
-  apt install -y php php-mbstring php-zip php-gd php-json php-curl php-mysql
-fi
+# 🧹 Vorher alles aufräumen
+echo "🧹 Entferne alte Installationen..."
+remove_if_exists phpmyadmin
+remove_if_exists apache2
+remove_if_exists mariadb-server
+remove_if_exists mariadb-client
+remove_if_exists expect
 
-# MariaDB
-if check_installed mariadb-server; then
-  echo "✅ MariaDB ist installiert"
-else
-  apt install -y mariadb-server
-  systemctl enable mariadb
-  systemctl start mariadb
-fi
+echo "🧼 Entferne alte phpMyAdmin & MySQL-Dateien..."
+rm -rf /usr/share/phpmyadmin
+rm -rf /etc/phpmyadmin
+rm -rf /var/lib/phpmyadmin
+rm -rf /etc/mysql
+rm -rf /var/lib/mysql
 
-# Expect
-if check_installed expect; then
-  echo "✅ expect ist installiert"
-else
-  apt install -y expect
-fi
+# 🔁 Frische Installation
+echo "📦 Installiere Apache, PHP, MariaDB..."
+apt update
+apt install -y apache2 php php-mbstring php-zip php-gd php-json php-curl php-mysql mariadb-server expect
 
-MYSQL_PLUGIN=$(mysql -u root -sN -e "SELECT plugin FROM mysql.user WHERE User='root';" 2>/dev/null || echo "unknown")
+systemctl enable apache2
+systemctl enable mariadb
+systemctl start apache2
+systemctl start mariadb
 
-if [[ "$MYSQL_PLUGIN" != "mysql_native_password" ]]; then
-  echo "🔐 Setze Passwort & Auth für '$MYSQL_USER'..."
-  expect -c "
-  set timeout 5
-  spawn mysql_secure_installation
-  expect \"Enter current password\" { send \"\r\" }
-  expect \"Set root password?\" { send \"y\r\" }
-  expect \"New password:\" { send \"$MYSQL_PASS\r\" }
-  expect \"Re-enter new password:\" { send \"$MYSQL_PASS\r\" }
-  expect \"Remove anonymous users?\" { send \"y\r\" }
-  expect \"Disallow root login remotely?\" { send \"y\r\" }
-  expect \"Remove test database?\" { send \"y\r\" }
-  expect \"Reload privilege tables now?\" { send \"y\r\" }
-  expect eof
-  "
-  mysql -u root <<EOF
-  ALTER USER '$MYSQL_USER'@'localhost' IDENTIFIED WITH mysql_native_password BY '$MYSQL_PASS';
-  FLUSH PRIVILEGES;
+# 🔐 Root-Passwort & Auth-Methode setzen
+echo "🔐 Setze Root-Passwort und Auth-Methode..."
+expect -c "
+set timeout 5
+spawn mysql_secure_installation
+expect \"Enter current password\" { send \"\r\" }
+expect \"Set root password?\" { send \"y\r\" }
+expect \"New password:\" { send \"$MYSQL_PASS\r\" }
+expect \"Re-enter new password:\" { send \"$MYSQL_PASS\r\" }
+expect \"Remove anonymous users?\" { send \"y\r\" }
+expect \"Disallow root login remotely?\" { send \"y\r\" }
+expect \"Remove test database?\" { send \"y\r\" }
+expect \"Reload privilege tables now?\" { send \"y\r\" }
+expect eof
+"
+
+# Plugin setzen (auth_socket → mysql_native_password)
+echo "⚙️ Korrigiere MySQL-Plugin für Benutzer '$MYSQL_USER'..."
+mysql -u root <<EOF
+ALTER USER '$MYSQL_USER'@'localhost' IDENTIFIED WITH mysql_native_password BY '$MYSQL_PASS';
+FLUSH PRIVILEGES;
 EOF
-fi
 
-if [ -d /usr/share/phpmyadmin ]; then
-  echo "✅ phpMyAdmin ist installiert"
-else
-  echo "⚙️ Installiere phpMyAdmin..."
-  echo "phpmyadmin phpmyadmin/dbconfig-install boolean true" | debconf-set-selections
-  echo "phpmyadmin phpmyadmin/app-password-confirm password $MYSQL_PASS" | debconf-set-selections
-  echo "phpmyadmin phpmyadmin/mysql/admin-pass password $MYSQL_PASS" | debconf-set-selections
-  echo "phpmyadmin phpmyadmin/mysql/app-pass password $MYSQL_PASS" | debconf-set-selections
-  echo "phpmyadmin phpmyadmin/reconfigure-webserver multiselect apache2" | debconf-set-selections
-  DEBIAN_FRONTEND=noninteractive apt install -y phpmyadmin
-  ln -sf /etc/phpmyadmin/apache.conf /etc/apache2/conf-available/phpmyadmin.conf
-  a2enconf phpmyadmin
-  systemctl reload apache2
-fi
+# 🛠️ phpMyAdmin Installation
+echo "⚙️ Installiere phpMyAdmin..."
+echo "phpmyadmin phpmyadmin/dbconfig-install boolean true" | debconf-set-selections
+echo "phpmyadmin phpmyadmin/mysql/admin-user string $MYSQL_USER" | debconf-set-selections
+echo "phpmyadmin phpmyadmin/mysql/admin-pass password $MYSQL_PASS" | debconf-set-selections
+echo "phpmyadmin phpmyadmin/app-password-confirm password $MYSQL_PASS" | debconf-set-selections
+echo "phpmyadmin phpmyadmin/reconfigure-webserver multiselect apache2" | debconf-set-selections
 
+DEBIAN_FRONTEND=noninteractive apt install -y phpmyadmin
+
+ln -sf /etc/phpmyadmin/apache.conf /etc/apache2/conf-available/phpmyadmin.conf
+a2enconf phpmyadmin
+systemctl reload apache2
+
+# 🔚 Ausgabe
 IP=$(hostname -I | awk '{print $1}')
 echo ""
-echo "✅ phpMyAdmin erreichbar unter: http://$IP/phpmyadmin"
-echo "🔑 Benutzer: $MYSQL_USER"
+echo "✅ phpMyAdmin erfolgreich installiert!"
+echo "🌐 Zugriff: http://$IP/phpmyadmin"
+echo "🔑 Login: $MYSQL_USER"
 echo "🔑 Passwort: $MYSQL_PASS"
